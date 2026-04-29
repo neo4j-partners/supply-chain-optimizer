@@ -1,5 +1,10 @@
 # Neo4j-Augmented Supply Chain Optimization on Databricks
 
+[![Neo4j](https://img.shields.io/badge/NEO4J-5.x-brightgreen?style=for-the-badge&logo=neo4j&logoColor=white)]()
+[![GDS](https://img.shields.io/badge/GDS-2.x-blue?style=for-the-badge)]()
+[![DEPLOY](https://img.shields.io/badge/DEPLOY-AURA%20%7C%20SELF--MANAGED-lightgrey?style=for-the-badge)]()
+[![POC](https://img.shields.io/badge/POC-5_DAYS-green?style=for-the-badge)]()
+
 An AI-powered supply chain risk and disruption analysis tool built on Databricks. Uses a multi-agent architecture to answer natural-language questions about supplier risk, part availability, shipment disruptions, and BOM dependencies — routing intelligently between SQL (Delta Lake), graph traversal (Neo4j AuraDB), and graph algorithms (Neo4j GDS) depending on the question type.
 
 ---
