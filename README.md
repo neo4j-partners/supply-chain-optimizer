@@ -11,7 +11,7 @@ An AI-powered supply chain risk and disruption analysis tool built on Databricks
 ### Data Flow
 
 ```
-Synthetic Data (Faker + Spark)
+Synthetic Data (Faker+Spark)
         ↓
 /Volumes/supplychain/supply_chain_raw/landing/
         ↓
