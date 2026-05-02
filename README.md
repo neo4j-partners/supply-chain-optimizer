@@ -1,76 +1,64 @@
 # Neo4j-Augmented Supply Chain Optimization on Databricks
 
-[![Neo4j](https://img.shields.io/badge/NEO4J-5.x-brightgreen?style=for-the-badge&logo=neo4j&logoColor=white)]()
-[![GDS](https://img.shields.io/badge/GDS-2.x-blue?style=for-the-badge)]()
-[![DEPLOY](https://img.shields.io/badge/DEPLOY-AURADB-lightgrey?style=for-the-badge)]()
-[![DATABRICKS](https://img.shields.io/badge/DATABRICKS-ENABLED-FF3621?style=for-the-badge&logo=databricks&logoColor=white)]()
+[![Databricks](https://img.shields.io/badge/DATABRICKS-ENABLED-FF3621?style=for-the-badge&logo=databricks&logoColor=white)]()
+[![Neo4j](https://img.shields.io/badge/NEO4J-AuraDB-brightgreen?style=for-the-badge&logo=neo4j&logoColor=white)]()
+[![GDS](https://img.shields.io/badge/GDS-Professional-blue?style=for-the-badge)]()
+[![Claude](https://img.shields.io/badge/CLAUDE-Sonnet_4.6-blueviolet?style=for-the-badge)]()
+[![Python](https://img.shields.io/badge/PYTHON-3.11+-yellow?style=for-the-badge&logo=python&logoColor=white)]()
+[![MLflow](https://img.shields.io/badge/MLFLOW-2.x-0194E2?style=for-the-badge&logo=mlflow&logoColor=white)]()
+[![Gradio](https://img.shields.io/badge/GRADIO-UI-orange?style=for-the-badge)]()
 [![POC](https://img.shields.io/badge/POC-15_DAYS-green?style=for-the-badge)]()
 
-An AI-powered supply chain risk and disruption analysis tool built on Databricks. Uses a multi-agent architecture to answer natural-language questions about supplier risk, part availability, shipment disruptions, and BOM dependencies — routing intelligently between SQL (Delta Lake), graph traversal (Neo4j AuraDB), and graph algorithms (Neo4j GDS) depending on the question type.
+An AI-powered supply chain risk and disruption analysis tool built on Databricks. Answers natural-language questions about supplier risk, part availability, shipment disruptions, and BOM dependencies — routing intelligently between SQL (Delta Lake), graph traversal (Neo4j AuraDB), and graph algorithms (Neo4j GDS).
 
 ---
 
 ## Architecture
 
-![Architecture](docs/architecture.png)
+<details open>
+<summary><strong>Architecture 1 — AgentBricks Supervisor</strong></summary>
 
-### Data Flow
+![Architecture Supervisor](docs/architecture_2.jpg)
+
+AgentBricks Supervisor routes between Genie Space (SQL/Delta) and the Neo4j MCP server (graph + GDS algorithms), hosted as a Databricks App. Unity Catalog provides governance, model routing, and audit across the full stack.
 
 ```
-Synthetic Data (Faker+Spark)
+Lakeflow Medallion Pipeline (scheduled)
         ↓
-/Volumes/supplychain/supply_chain_raw/landing/
+Gold Delta Tables
         ↓
-Lakeflow Spark Declarative Pipeline (Serverless)
+project_graph.py (Databricks Job Task — runs after pipeline)
         ↓
-supplychain.supply_chain_medallion
-  Bronze (6 streaming tables)  →  Silver (6 streaming tables)  →  Gold (5 materialized views)
-        ↓                                                               ↓
-  Raw ingestion                                              Agent Layer reads here
-  Auto Loader from volume                                    + Neo4j subgraph projection
+Neo4j AuraDB (idempotent MERGE — nodes + relationships kept in sync)
+        ↓
+User Question → AgentBricks Supervisor
+  ├── Genie Space        →  SQL against gold Delta tables   →  Answer
+  └── Neo4j MCP Server   →  Cypher + GDS algorithms         →  Answer
 ```
 
-### Agent Layer
+</details>
+
+<details>
+<summary><strong>Architecture 2 — Gradio App (Interactive)</strong></summary>
+
+![Architecture Gradio](docs/architecture_3.jpg)
+
+Route agent inside the Gradio app classifies each question and dispatches to SQL, Graph, or GDS agent. Graph is projected lazily from Delta gold tables on first use and persists in AuraDB. Answers are cached in a Delta table with a 24h TTL.
 
 ```
-User Question
-      ↓
-  Router Agent (model-selectable)
-      ├── route_to_sql   →  SQL Agent   →  spark.sql() on gold tables         →  Answer
-      ├── route_to_graph →  Graph Agent →  project subgraph → Neo4j Cypher    →  Answer
-      └── route_to_gds   →  GDS Agent   →  gds.graph.project() → algorithm    →  Answer
-                                                      ↓
-                                            Delta answer_cache (TTL 24h)
+Synthetic Data → Lakeflow Pipeline → Gold Delta Tables
+        ↓
+User Question → Router Agent (Claude)
+  ├── SQL Agent    →  spark.sql() on gold tables       →  Answer
+  ├── Graph Agent  →  lazy project → Neo4j Cypher      →  Answer
+  └── GDS Agent    →  gds.graph.project() → algorithm  →  Answer
+        ↓
+Delta Answer Cache (TTL 24h)
 ```
+
+</details>
 
 ---
-
-## Table of Contents
-
-<table>
-<tr>
-<td>
-
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Data Model](#data-model)
-- [Setup](#setup)
-- [Application Running on Databricks Apps](#application-running-on-databricks-apps-serverless-compute)
-
-</td>
-<td>
-
-- [Agent Routing Logic](#agent-routing-logic)
-- [Progressive Graph Projection](#progressive-graph-projection)
-- [GDS Graph Algorithms](#gds-graph-algorithms)
-- [Answer Cache](#answer-cache)
-- [Example Questions](#example-questions)
-- [Roadmap](#roadmap)
-
-</td>
-</tr>
-</table>
 
 ---
 
@@ -79,9 +67,13 @@ User Question
 | Layer | Technology |
 |-------|-----------|
 | Data platform | Databricks (Serverless) |
-| Storage | Delta Lake / Unity Catalog |
+| Storage | Delta Lake |
+| Governance & lineage | Unity Catalog — data lineage, secret scopes, UC functions, model registry |
 | Pipeline | Lakeflow Spark Declarative Pipelines (SQL) |
+| Agent orchestration | AgentBricks / Mosaic AI — Supervisor routing between tools |
+| Natural language SQL | Genie Space — SQL Q&A against gold Delta tables |
 | Agent framework | Claude Opus 4.6 / Sonnet 4.6 / Haiku 4.5 (Anthropic SDK) — tool use, adaptive thinking |
+| Graph protocol | MCP (Model Context Protocol) — Neo4j MCP server hosted on Databricks Apps |
 | Graph algorithms | Neo4j GDS (PageRank, Betweenness Centrality, Louvain, Node Similarity, WCC, Dijkstra) |
 | Graph database | Neo4j AuraDB |
 | Application hosting | Databricks Apps (Serverless Compute) |
@@ -91,58 +83,89 @@ User Question
 
 ---
 
-## Project Structure
+<details>
+<summary><strong>Agent Routing & Example Questions</strong></summary>
 
-Follow the numbered entry points in sequence to go from zero to a running app:
+| Question Type | Route | Example |
+|--------------|-------|---------|
+| Risk scores, rankings | SQL | "Which suppliers have Critical risk?" |
+| Stock status, availability | SQL | "What is the stock status for critical parts?" |
+| PO aging, exposure | SQL | "Show delayed POs over 30 days old" |
+| Shipment delays | SQL | "Which shipments have High disruption severity?" |
+| BOM cost rollup | SQL | "What are the top 10 most expensive assemblies?" |
+| Impact if X fails | **Graph** | "What parts are at risk if SUP-00094 fails?" |
+| Dependency chains | **Graph** | "Which assemblies depend on this component?" |
+| Single points of failure | **Graph** | "Which critical parts have only one supplier?" |
+| Cascading disruptions | **Graph** | "What happens if all China suppliers are disrupted?" |
+| Bottleneck / centrality | **GDS** | "Which parts are the biggest structural bottlenecks?" |
+| Network-wide scoring | **GDS** | "Rank parts by how many assemblies depend on them (PageRank)" |
+| Cluster / community detection | **GDS** | "Which supplier-part clusters are most exposed to risk?" |
+| Node similarity | **GDS** | "Which suppliers have the most similar part portfolios?" |
+| Weighted shortest path | **GDS** | "What is the least-delay sourcing path to this assembly?" |
+| Disconnected components | **GDS** | "Are there isolated parts in the BOM?" |
 
+**SQL — Delta Lake**
 ```
-supply-chain-optimizer/
-│
-├── 01_generate_data.py                     # ① Generate + upload synthetic data
-├── 02_deploy_pipeline.sh                   # ② Deploy + run medallion pipeline
-├── 03_run_agents.py                        # ③ Run agents locally (CLI)
-├── 04_deploy_app.sh                        # ④ Deploy Gradio app to Databricks Apps
-│
-├── databricks.yml                          # Databricks Asset Bundle config
-├── requirements.txt                        # anthropic, neo4j, databricks-sdk
-├── .env                                    # Credentials (gitignored)
-│
-├── resources/
-│   └── supply_chain_pipeline.pipeline.yml  # SDP pipeline resource definition
-│
-├── data_gen/
-│   ├── generate_supply_chain_data.py       # Local Spark data generator
-│   └── generate_supply_chain_data_notebook.py  # Databricks notebook version
-│
-├── src/supply_chain_pipeline/transformations/
-│   ├── bronze_*.sql                        # Auto Loader → bronze streaming tables
-│   ├── silver_*.sql                        # Typed + DQ constraints
-│   └── gold_*.sql                          # Risk scores, availability, BOM, shipments
-│
-├── agents/
-│   ├── config.py                           # All env vars and table names
-│   ├── cache.py                            # Delta answer cache
-│   ├── prompts.py                          # System prompts + tool schemas
-│   ├── router.py                           # Claude router agent
-│   ├── sql_agent.py                        # SQL agent
-│   ├── graph_agent.py                      # Graph agent
-│   └── supply_chain_agent_notebook.py      # All-in-one Databricks notebook
-│
-├── neo4j_graph/
-│   ├── connector.py                        # Neo4j driver + subgraph projectors
-│   └── queries.py                          # Pre-built Cypher query library
-│
-├── app/                                    # Databricks App (Serverless Compute)
-│   ├── app.py                              # Gradio app — router + SQL + graph + GDS agents
-│   ├── app.yaml                            # Databricks Apps config
-│   └── requirements.txt                    # App dependencies
-│
-└── main.py                                 # Local CLI entry point
+Which suppliers have Critical risk scores?
+Show me all delayed purchase orders over 30 days old
+What are the top 10 most expensive BOM assemblies?
+Which shipments have High or Critical disruption severity?
+What is the stock status for critical parts?
 ```
+
+**Graph — Neo4j Cypher traversal**
+```
+What parts are at risk if our highest-risk supplier fails?
+Which critical parts have only a single supplier?
+What assemblies would be affected if Tier-1 suppliers from China are disrupted?
+Show me the most depended-upon components in the BOM network
+Which carrier routes have the most disrupted shipments?
+```
+
+**GDS — Neo4j Graph Algorithms**
+```
+Which parts are the biggest structural bottlenecks in the BOM? (Betweenness Centrality)
+Rank parts by how many assemblies depend on them using PageRank
+Which suppliers have the most similar part portfolios? (Node Similarity)
+Detect supplier-part communities — which clusters are most exposed to risk? (Louvain)
+Which facilities are the most critical routing hubs in the shipment network?
+Are there any isolated or disconnected parts in the BOM? (WCC)
+```
+
+</details>
 
 ---
 
-## Data Model
+## AgentBricks Supervisor
+
+The Supervisor routes questions between two tools: **Genie Space** (SQL/Delta) and the **Neo4j MCP server** (graph traversal + GDS algorithms). The screenshot below shows both tools configured, with a live PageRank result on the right.
+
+> **Note:** The Neo4j MCP server is the preferred approach for all graph and GDS questions. It executes Cypher and GDS algorithms directly against AuraDB with no intermediate layers, no response format constraints, and no cold-start latency — producing richer, more accurate answers than the MLflow serving endpoint route.
+
+![AgentBricks Supervisor](docs/supervisor.jpg)
+
+| Tool | Type | Handles |
+|------|------|---------|
+| `agent-supply-chain-analytics` | Genie Space | Risk scores, PO aging, stock status, shipment delays, BOM cost rollups |
+| `mcp-neo4j-supply-chain` | Databricks App (MCP) | Supplier failure impact, BOM dependency chains, PageRank, community detection, shortest path |
+
+> **Prerequisite:** The Neo4j MCP server reads directly from AuraDB at query time — the graph must be populated before using the Supervisor. Run the `supply_chain_full_pipeline` job (pipeline + `project_graph.py`) at least once to load nodes and relationships into AuraDB.
+
+---
+
+## Application Running on Databricks Apps
+
+![Databricks App](docs/databricks_app.png)
+
+---
+
+> [!TIP]
+> **For Developers:** Want this running in your own Databricks workspace? The fastest path is the [Databricks AI Dev Kit](https://github.com/databricks-solutions/ai-dev-kit) — works with Claude Code or Cursor, handles scaffolding and deployment end-to-end. Manual steps below if you'd rather set it up yourself.
+
+---
+
+<details>
+<summary><strong>Data Model</strong></summary>
 
 ### Synthetic Domain Entities
 
@@ -175,14 +198,18 @@ supply-chain-optimizer/
 (:Shipment)-[:ARRIVES_AT]->(:Facility)
 ```
 
----
+### GDS Projections
 
-> [!TIP]
-> **For Developers:** Want this running in your own Databricks workspace? The fastest path is the [Databricks AI Dev Kit](https://github.com/databricks-solutions/ai-dev-kit) — works with Claude Code or Cursor, handles scaffolding and deployment end-to-end. Manual steps below if you'd rather set it up yourself.
+| GDS Projection | Nodes | Relationships | Algorithms |
+|----------------|-------|---------------|------------|
+| `bom_network` | Part | REQUIRES (weight: cumulative_quantity) | PageRank, Betweenness Centrality, WCC, Shortest Path |
+| `supply_risk_network` | Supplier + Part | SUPPLIES (weights: po_count, avg_delay_days) | Node Similarity, Louvain Community Detection, Weighted Shortest Path |
+| `facility_network` | Supplier + Facility | SHIPS_TO | Betweenness Centrality, Louvain, Shortest Path |
 
----
+</details>
 
-## Setup
+<details>
+<summary><strong>Setup</strong></summary>
 
 ### Prerequisites
 
@@ -205,7 +232,7 @@ databricks secrets put-secret supply_chain neo4j_password    --string-value <pas
 
 ### 2. Generate Synthetic Data
 
-Open `data_gen/generate_supply_chain_data_notebook.py` in Databricks and run all cells.  
+Open `data_gen/generate_supply_chain_data_notebook.py` in Databricks and run all cells.
 Data lands at: `/Volumes/supplychain/supply_chain_raw/landing/`
 
 ### 3. Deploy and Run the Medallion Pipeline
@@ -221,11 +248,7 @@ Open `agents/supply_chain_agent_notebook` in your Databricks workspace:
 - **Run All** once to initialize
 - Update the **Question** widget and run the last cell for each query
 
-### 5. Deploy the Application on Databricks Apps (Serverless Compute)
-
-The `app/` directory contains a Gradio chat application that runs entirely on Databricks serverless compute — no external hosting needed. It embeds the full router + SQL + graph + GDS agent stack, reads secrets directly from the Databricks secret scope, and includes a model selector (Opus / Sonnet / Haiku) and adaptive thinking toggle in the UI.
-
-#### 5a. Upload and deploy
+### 5. Deploy the Gradio App on Databricks Apps
 
 ```bash
 databricks workspace import-dir app /Workspace/Users/<your-email>/supply-chain-optimizer --overwrite
@@ -233,141 +256,89 @@ databricks apps deploy supply-chain-optimizer \
   --source-code-path /Workspace/Users/<your-email>/supply-chain-optimizer
 ```
 
-#### 5b. Grant the app service principal permissions
-
-After the first deploy, retrieve the app's service principal client ID:
-
-```bash
-databricks apps get supply-chain-optimizer -o json | python3 -c \
-  "import sys,json; d=json.load(sys.stdin); print(d['service_principal_client_id'])"
-```
-
-Then grant it access to secrets and Unity Catalog:
+After the first deploy, grant the app service principal access to secrets and Unity Catalog:
 
 ```bash
 SP=<service_principal_client_id>
-
-# Secret scope
 databricks secrets put-acl supply_chain "$SP" READ
-
-# Unity Catalog
 databricks grants update catalog supplychain \
   --json "{\"changes\": [{\"principal\": \"$SP\", \"add\": [\"USE CATALOG\"]}]}"
 databricks grants update schema supplychain.supply_chain_medallion \
   --json "{\"changes\": [{\"principal\": \"$SP\", \"add\": [\"USE SCHEMA\", \"SELECT\", \"MODIFY\", \"CREATE TABLE\"]}]}"
 ```
 
-#### 5c. Re-deploying after code changes
+### 6. Schedule Neo4j Graph Sync
 
-```bash
-databricks workspace import-dir app /Workspace/Users/<your-email>/supply-chain-optimizer --overwrite
-databricks apps deploy supply-chain-optimizer \
-  --source-code-path /Workspace/Users/<your-email>/supply-chain-optimizer
+Create a Databricks Job `supply_chain_full_pipeline` with two tasks:
+- **Task 1** — Pipeline task: `supply_chain_medallion_pipeline`
+- **Task 2** — Notebook task: `agents/project_graph.py`, depends on Task 1
+
+This keeps Neo4j AuraDB in sync with gold Delta tables after every pipeline run.
+
+</details>
+
+<details>
+<summary><strong>Project Structure</strong></summary>
+
+```
+supply-chain-optimizer/
+│
+├── 01_generate_data.py                     # ① Generate + upload synthetic data
+├── 02_deploy_pipeline.sh                   # ② Deploy + run medallion pipeline
+├── 03_run_agents.py                        # ③ Run agents locally (CLI)
+├── 04_deploy_app.sh                        # ④ Deploy Gradio app to Databricks Apps
+│
+├── databricks.yml                          # Databricks Asset Bundle config
+├── requirements.txt                        # anthropic, neo4j, databricks-sdk
+├── .env                                    # Credentials (gitignored)
+│
+├── resources/
+│   └── supply_chain_pipeline.pipeline.yml  # SDP pipeline resource definition
+│
+├── data_gen/
+│   ├── generate_supply_chain_data.py       # Local Spark data generator
+│   └── generate_supply_chain_data_notebook.py  # Databricks notebook version
+│
+├── src/supply_chain_pipeline/transformations/
+│   ├── bronze_*.sql                        # Auto Loader → bronze streaming tables
+│   ├── silver_*.sql                        # Typed + DQ constraints
+│   └── gold_*.sql                          # Risk scores, availability, BOM, shipments
+│
+├── agents/
+│   ├── config.py                           # All env vars and table names
+│   ├── cache.py                            # Delta answer cache
+│   ├── prompts.py                          # System prompts + tool schemas
+│   ├── router.py                           # Claude router agent
+│   ├── sql_agent.py                        # SQL agent
+│   ├── graph_agent.py                      # Graph agent
+│   ├── project_graph.py                    # Neo4j graph sync job notebook
+│   └── supply_chain_agent_notebook.py      # All-in-one Databricks notebook
+│
+├── neo4j_graph/
+│   ├── connector.py                        # Neo4j driver + subgraph projectors
+│   └── queries.py                          # Pre-built Cypher query library
+│
+├── mcp_neo4j/
+│   ├── app.py                              # FastAPI proxy for Neo4j MCP server
+│   ├── app.yaml                            # Databricks App config
+│   └── requirements.txt                    # App dependencies
+│
+├── app/                                    # Gradio App (Serverless Compute)
+│   ├── app.py                              # Gradio app — router + SQL + graph + GDS agents
+│   ├── app.yaml                            # Databricks Apps config
+│   └── requirements.txt                    # App dependencies
+│
+└── main.py                                 # Local CLI entry point
 ```
 
-## Application Running on Databricks Apps (Serverless Compute)
-
-![Databricks App](docs/databricks_app.png)
-
----
-
-## Agent Routing Logic
-
-| Question Type | Route | Example |
-|--------------|-------|---------|
-| Risk scores, rankings | SQL | "Which suppliers have Critical risk?" |
-| Stock status, availability | SQL | "What is the stock status for critical parts?" |
-| PO aging, exposure | SQL | "Show delayed POs over 30 days old" |
-| Shipment delays | SQL | "Which shipments have High disruption severity?" |
-| BOM cost rollup | SQL | "What are the top 10 most expensive assemblies?" |
-| Impact if X fails | **Graph** | "What parts are at risk if SUP-00094 fails?" |
-| Dependency chains | **Graph** | "Which assemblies depend on this component?" |
-| Single points of failure | **Graph** | "Which critical parts have only one supplier?" |
-| Cascading disruptions | **Graph** | "What happens if all China suppliers are disrupted?" |
-| Bottleneck / centrality | **GDS** | "Which parts are the biggest structural bottlenecks?" |
-| Network-wide scoring | **GDS** | "Rank parts by how many assemblies depend on them (PageRank)" |
-| Cluster / community detection | **GDS** | "Which supplier-part clusters are most exposed to risk?" |
-| Node similarity | **GDS** | "Which suppliers have the most similar part portfolios?" |
-| Weighted shortest path | **GDS** | "What is the least-delay sourcing path to this assembly?" |
-| Disconnected components | **GDS** | "Are there isolated parts in the BOM?" |
-
----
-
-## Progressive Graph Projection
-
-The Neo4j graph is built lazily — subgraphs are projected from Delta gold tables on first use and persist in AuraDB across questions and app restarts. A live count query on AuraDB prevents re-loading data that already exists.
-
-| Subgraph | Relationships Created | Source Tables |
-|----------|----------------------|---------------|
-| `supplier_risk` | `(:Supplier)-[:SUPPLIES]->(:Part)` | gold_supplier_risk, gold_part_availability, gold_active_purchase_orders |
-| `bom_dependency` | `(:Part)-[:REQUIRES]->(:Part)` | gold_bom_explosion |
-| `shipment_route` | `(:Supplier)-[:SHIPS_TO]->(:Facility)` | gold_shipment_pipeline |
-| `full_network` | All of the above | All gold tables |
-
----
-
-## GDS Graph Algorithms
-
-GDS named graphs are in-memory projections created on top of the stored AuraDB data. Algorithms run entirely in RAM inside Neo4j — results are streamed back to the agent, never written to storage.
-
-| GDS Projection | Nodes | Relationships | Algorithms |
-|----------------|-------|---------------|------------|
-| `bom_network` | Part | REQUIRES (weight: cumulative_quantity) | PageRank, Betweenness Centrality, WCC, Shortest Path |
-| `supply_risk_network` | Supplier + Part | SUPPLIES (weights: po_count, avg_delay_days) | Node Similarity, Louvain Community Detection, Weighted Shortest Path |
-| `facility_network` | Supplier + Facility | SHIPS_TO | Betweenness Centrality, Louvain, Shortest Path |
-
----
-
-## Answer Cache
-
-All agent responses are cached in `supplychain.supply_chain_medallion.answer_cache` (Delta table).
-
-- **Key**: SHA-256 hash of the normalized question text
-- **TTL**: 24 hours (configurable via `CACHE_TTL_HOURS`)
-- **Hit tracking**: `hit_count` incremented on every cache read
-- **Invalidation**: Automatic on TTL expiry; corrupt entries self-heal on read
-
----
-
-## Example Questions
-
-**SQL — Delta Lake**
-```
-Which suppliers have Critical risk scores?
-Show me all delayed purchase orders over 30 days old
-What are the top 10 most expensive BOM assemblies?
-Which shipments have High or Critical disruption severity?
-What is the stock status for critical parts?
-```
-
-**Graph — Neo4j Cypher traversal**
-```
-What parts are at risk if our highest-risk supplier fails?
-Which critical parts have only a single supplier?
-What assemblies would be affected if Tier-1 suppliers from China are disrupted?
-Show me the most depended-upon components in the BOM network
-Which carrier routes have the most disrupted shipments?
-```
-
-**GDS — Neo4j Graph Algorithms**
-```
-Which parts are the biggest structural bottlenecks in the BOM? (Betweenness Centrality)
-Rank parts by how many assemblies depend on them using PageRank
-Which suppliers have the most similar part portfolios? (Node Similarity)
-Detect supplier-part communities — which clusters are most exposed to risk? (Louvain)
-Which facilities are the most critical routing hubs in the shipment network?
-Are there any isolated or disconnected parts in the BOM? (WCC)
-```
+</details>
 
 ---
 
 ## Roadmap
 
-### Richer Data Model & New Query Capabilities
-
-The current dataset is sufficient for a compelling demo. The additions below would unlock the next tier of supply chain questions.
-
-#### High-Value Column Additions
+<details>
+<summary><strong>Richer Data Model</strong></summary>
 
 | Column | Table | Unlocks |
 |--------|-------|---------|
@@ -377,42 +348,45 @@ The current dataset is sufficient for a compelling demo. The additions below wou
 | `days_of_supply` | Part availability | "Which critical parts will stock out first?" |
 | `substitute_part_id` | Parts | Graph query: find an alternative part when a component fails |
 
-#### New Entity: Risk Events
+A `risk_events` table mapping external disruptions (weather, port strikes, geopolitical events) to affected suppliers would unlock: *"What parts are at risk due to the port strike in Shanghai?"*
 
-A `risk_events` table mapping external disruptions (weather, port strikes, geopolitical events) to affected suppliers, facilities, or countries. This unlocks the most realistic supply chain question:
+</details>
 
-> *"What parts are at risk due to the port strike in Shanghai?"*
+<details>
+<summary><strong>MLflow Tracing & Evaluation</strong></summary>
 
-Would require:
-- New synthetic data generator for risk events
-- New bronze/silver/gold pipeline tables
-- New graph edges: `(:RiskEvent)-[:AFFECTS]->(:Facility|:Supplier)`
-- Router updated to recognize disruption-event questions
-
-#### Impact on GDS
-
-`substitute_part_id` would add a new relationship type `(:Part)-[:SUBSTITUTE_FOR]->(:Part)` enabling a new GDS projection for alternative sourcing path analysis (Dijkstra with fallback routing).
-
----
-
-#### MLflow Tracing & Evaluation
-
-The current agents are raw Anthropic SDK calls with no observability. MLflow integration would add three layers:
-
-**1. MLflow Tracing**
-Instrument every agent call to capture latency, token usage, tool calls, and routing decisions — giving a full audit trail of what Claude did on each question.
 ```python
 import mlflow
 mlflow.anthropic.autolog()  # traces all Claude API calls automatically
-```
-
-**2. MLflow Evaluation**
-Run LLM-as-judge scoring across SQL, Graph, and GDS routes to automatically assess answer quality (correctness, relevance, completeness). Useful for comparing Sonnet vs Opus answer quality systematically.
-```python
 mlflow.evaluate(data=questions_df, model=agent, evaluators=["default"])
 ```
 
-**3. Databricks Agent Framework**
-Wrap agents as proper MLflow models, serve via Databricks Model Serving endpoints, and register tools in Unity Catalog. Moves the agent stack out of the Gradio app into a production-grade serving layer.
+Add tracing first (no code restructure needed), evaluation second.
 
-> **Recommendation:** Add tracing first (instrumentation only, no code restructure needed), evaluation second, Agent Framework last if moving beyond demo.
+</details>
+
+---
+
+## Changelog
+
+### Phase 2 — AgentBricks Supervisor + Neo4j MCP
+
+| What | Detail |
+|------|--------|
+| **Neo4j graph sync job** | `agents/project_graph.py` — reads gold Delta tables and upserts all nodes/relationships into AuraDB via idempotent MERGE. Runs as Task 2 in `supply_chain_full_pipeline` job after the Lakeflow pipeline. |
+| **AgentBricks Supervisor** | Supply Chain Supervisor with Genie Space (SQL) + Neo4j MCP server (graph + GDS). |
+| **Neo4j MCP server** | `mcp-neo4j-supply-chain` Databricks App — deploys official `neo4j-mcp-server` as a FastAPI proxy. Registered in Unity ML Gateway MCP Catalog. |
+| **MLflow PyFunc models** | `graph_agent_model.py` and `gds_agent_model.py` — registered in Unity Catalog as versioned models with serving endpoints (retained as fallback). |
+| **Auth fix (MCP server)** | `httpx.BasicAuth._auth_header` (private attribute, unreliable) replaced with explicit `base64.b64encode()` Basic Auth header construction. |
+| **Second workspace** | Full stack deployed to `adb-1098933906466604` — catalog `supplychain_optimizer`, schema `supply_chain_medallion`, secret scope `supply_chain`. |
+
+### Phase 1 — Core Stack
+
+| What | Detail |
+|------|--------|
+| **Synthetic data** | 200 suppliers, 500 parts, 50 facilities, ~12K shipments generated with Faker + Spark. |
+| **Medallion pipeline** | Lakeflow Spark Declarative Pipeline — Bronze (Auto Loader) → Silver (DQ) → Gold (5 materialized views). |
+| **Gradio app** | 3-way router (SQL / Graph / GDS) with model selector and adaptive thinking toggle. Deployed on Databricks Apps. |
+| **Neo4j graph** | Supplier/Part/Facility graph projected lazily from gold Delta tables into AuraDB on first question. |
+| **GDS projections** | `bom_network`, `supply_risk_network`, `facility_network` — in-memory named graphs for PageRank, Betweenness, Louvain, Node Similarity, WCC, Dijkstra. |
+| **Answer cache** | SHA-256 keyed Delta table with 24h TTL. |
