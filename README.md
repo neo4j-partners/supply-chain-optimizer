@@ -188,6 +188,8 @@ The Supervisor routes questions between two tools: **Genie Space** (SQL/Delta) a
 
 ### Neo4j Graph Schema
 
+![Neo4j Graph Schema](docs/schema.jpg)
+
 ```
 (:Supplier)-[:SUPPLIES {po_count, avg_delay_days}]->(:Part)
 (:Part)-[:REQUIRES {quantity, depth}]->(:Part)
@@ -272,6 +274,66 @@ Create a Databricks Job `supply_chain_full_pipeline` with two tasks:
 - **Task 2** — Notebook task: `agents/project_graph.py`, depends on Task 1
 
 This keeps Neo4j AuraDB in sync with gold Delta tables after every pipeline run.
+
+### 7. Deploy Neo4j MCP Server (Databricks App)
+
+Upload `mcp_neo4j/` to your workspace and deploy as a Databricks App:
+
+```bash
+databricks workspace import-dir mcp_neo4j /Workspace/Users/<your-email>/mcp-neo4j-supply-chain --overwrite
+databricks apps deploy mcp-neo4j-supply-chain \
+  --source-code-path /Workspace/Users/<your-email>/mcp-neo4j-supply-chain
+```
+
+Add secret resources to the app: `neo4j-uri`, `neo4j-username`, `neo4j-password`, `neo4j-database` from the `supply_chain` secret scope.
+
+### 8. Configure AgentBricks Supervisor
+
+In **Mosaic AI → AgentBricks**, create a Supervisor with two tools:
+- **Genie Space** — connect to your `Supply Chain Analytics` Genie space
+- **Neo4j MCP** — connect to the `mcp-neo4j-supply-chain` Databricks App
+
+Use these descriptions for correct routing:
+
+**Supervisor:**
+```
+Routes supply chain questions between two tools:
+
+1. Genie Space (SQL) — ONLY for: counts, totals, rankings, risk scores, stock status, PO aging,
+   shipment delay stats, BOM cost rollups. Answers come from Delta tables.
+
+2. Neo4j MCP (Graph) — ONLY for: ANY question containing words like "network", "hub",
+   "centrality", "PageRank", "bottleneck", "community", "cluster", "similarity", "shortest path",
+   "depends on", "impact if", "fails", "cascading", "disconnected", "WCC", "Louvain", "graph",
+   "BOM chain", "routing hub". Answers require graph traversal or algorithms.
+
+When in doubt, use Neo4j MCP.
+```
+
+**Genie Space:**
+```
+SQL ONLY. Do NOT use if the question contains: network, hub, centrality, PageRank, bottleneck,
+community, cluster, similarity, shortest path, cascading, graph algorithm, routing hub, WCC,
+Louvain, depends on, impact if fails.
+
+Answers structured data questions about supplier risk scores, part availability and stock status,
+purchase order aging, shipment delays, and BOM cost rollups. Use ONLY for aggregation, ranking,
+and filtering.
+```
+
+**Neo4j MCP:**
+```
+Use this tool for ALL questions involving graph relationships, network analysis, and graph algorithms. This includes:
+- Facility hub analysis: which facilities are the most critical routing hubs, most connected nodes in the shipment network
+- Supplier failure impact: what parts are at risk if a supplier fails, cascading disruptions
+- Dependency analysis: BOM chains, which assemblies depend on a component
+- Single points of failure: critical parts with only one supplier
+- Geographic disruptions: impact if all China/region suppliers are disrupted
+- Graph algorithms: PageRank ranking of parts by importance, betweenness centrality bottlenecks,
+  Louvain community/cluster detection, node similarity between suppliers, shortest path analysis,
+  disconnected components (WCC)
+- Network structure: most connected suppliers, hub facilities, supplier-part clusters
+```
 
 </details>
 
