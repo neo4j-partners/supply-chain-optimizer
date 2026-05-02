@@ -142,7 +142,8 @@ Are there any isolated or disconnected parts in the BOM? (WCC)
 
 The Supervisor routes questions between two tools: **Genie Space** (SQL/Delta) and the **Neo4j MCP server** (graph traversal + GDS algorithms). The screenshot below shows both tools configured, with a live PageRank result on the right.
 
-> **Note:** The Neo4j MCP server is the preferred approach for all graph and GDS questions. It executes Cypher and GDS algorithms directly against AuraDB with no intermediate layers, no response format constraints, and no cold-start latency — producing richer, more accurate answers than the MLflow serving endpoint route.
+> [!NOTE]
+> The Neo4j MCP server is the preferred approach for all graph and GDS questions. It executes Cypher and GDS algorithms directly against AuraDB with no intermediate layers, no response format constraints, and no cold-start latency — producing richer, more accurate answers than the MLflow serving endpoint route.
 
 ![AgentBricks Supervisor](docs/supervisor.jpg)
 
@@ -151,6 +152,7 @@ The Supervisor routes questions between two tools: **Genie Space** (SQL/Delta) a
 | `agent-supply-chain-analytics` | Genie Space | Risk scores, PO aging, stock status, shipment delays, BOM cost rollups |
 | `mcp-neo4j-supply-chain` | Databricks App (MCP) | Supplier failure impact, BOM dependency chains, PageRank, community detection, shortest path |
 
+> [!IMPORTANT]
 > **Prerequisite:** The Neo4j MCP server reads directly from AuraDB at query time — the graph must be populated before using the Supervisor. Run the `supply_chain_full_pipeline` job (pipeline + `project_graph.py`) at least once to load nodes and relationships into AuraDB.
 
 ---
